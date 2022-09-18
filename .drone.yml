@@ -1,0 +1,64 @@
+kind: pipeline
+name: default
+
+steps:
+  - name: clone environment variables repo
+    image: alpine/git
+    environment:
+      CLONE_PATH: swarm-envs
+    commands:
+      - git clone https://github.com/jon-chen-configs/swarm-env-config.git $CLONE_PATH
+
+  - name: validate config
+    image: tiangolo/docker-with-compose
+    environment:
+      COMPOSE_ENV: swarm-envs/swarm.env
+      COMPOSE_FILE: keycloak-swarm.yml
+    commands:
+      - docker-compose --env-file $COMPOSE_ENV --file $COMPOSE_FILE config > .compose.yml
+
+  - name: auto-promote
+    image: drone/cli:1.5-alpine
+    environment:
+      DRONE_SERVER: http://drone-server
+      DRONE_TOKEN:
+        from_secret: drone_token
+    commands:
+      - drone build promote $DRONE_REPO $DRONE_BUILD_NUMBER production
+    when:
+      event: 
+        exclude: [promote]
+
+  - name: deploy
+    image: automagistre/docker:stable
+    environment:
+      STACK_NAME: keycloak-swarm
+      COMPOSE_FILE: keycloak-swarm.yml
+    volumes:
+      - name: docker.sock
+        path: /var/run/docker.sock
+    commands:
+      - docker stack deploy --prune --with-registry-auth --compose-file .compose.yml $STACK_NAME
+    when:
+      event: [promote]
+
+  - name: wait for deploy
+    image: sudobmitch/docker-stack-wait:latest
+    environment:
+      STACK_NAME: keycloak-swarm
+    volumes:
+      - name: docker.sock
+        path: /var/run/docker.sock
+    commands:
+      - /docker-stack-wait.sh $STACK_NAME
+    when:
+      event: [promote]
+
+volumes:
+  - name: docker.sock
+    host:
+      path: /var/run/docker.sock
+
+trigger:
+  event: [push, custom, promote]
+  branch: [master]
