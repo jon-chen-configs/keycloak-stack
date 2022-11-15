@@ -1,7 +1,9 @@
 #!/bin/sh
+set -e
 export $(grep -v '^#' ../../../compose/conf/.env | xargs)
 export $(grep -v '^#' ${ENV_DIR:-swarm-envs}/swarm/keycloak-stack/postgres.env | xargs)
 
+echo backup from source db.
 docker run -e PGPASSWORD=${POSTGRES_PASSWORD} \
     --rm \
     --name postgres-client \
@@ -10,6 +12,7 @@ docker run -e PGPASSWORD=${POSTGRES_PASSWORD} \
     docker-hub.cynicsoft.net/postgres-client:latest \
     /bin/sh -c 'pg_dump -c -h postgres -U postgres keycloak > /backups/data/postgres/keycloak_postgres_backup_manual.dump'
 
+echo restore to target db.
 docker run -e PGPASSWORD=${POSTGRES_PASSWORD} \
     --rm \
     --name postgres-client \
